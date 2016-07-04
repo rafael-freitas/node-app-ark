@@ -1,0 +1,25 @@
+{
+  "name": "node-app-ark",
+  "version": "0.0.1",
+  "description": "A Node application creator about plugin architecture approach.",
+  "main": "appark.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rafael-freitas/node-app-ark.git"
+  },
+  "keywords": [
+    "node",
+    "skeleton",
+    "express",
+    "plugin-architecture"
+  ],
+  "author": "Rafael Freitas Lima",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/rafael-freitas/node-app-ark/issues"
+  },
+  "homepage": "https://github.com/rafael-freitas/node-app-ark#readme"
+}
