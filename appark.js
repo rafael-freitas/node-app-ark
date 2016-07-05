@@ -76,12 +76,14 @@ AppArk.prototype = Object.create( EventEmitter.prototype, {constructor: {value:A
  * @param  {Function} callback  When done will be called
  */
 AppArk.prototype.loadPlugin = function( path_name, callback ) {
-    assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
-    assert( isDirectory( resolve( base_path, path_name ) ), "The path not exists or not accessible" );
-
     var app = this;
     var metadata = {};
     var package_path = resolve( base_path, path_name );
+
+    assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
+    assert( isDirectory( package_path ), "The path not exists or not accessible: " + package_path );
+
+
 
     /*
         Check if plugin is already loaded
@@ -138,11 +140,16 @@ AppArk.prototype.resolvePackageDependencies = function( metadata, callback ) {
 
         var requires_copy = metadata.plugin.requires.slice();
 
+        // when does not have any dependency go out
+        if ( ! requires_copy.length ) {
+            return callback();
+        }
+
         var check_finish_load_plugins = ( loaded_plugin_path ) => {
             // remove each loaded plugin from requires copy and when all them were loadeds call the callback
             requires_copy.splice( requires_copy.indexOf( loaded_plugin_path ), 1 );
 
-            if ( requires_copy.length == 0 ) {
+            if ( ! requires_copy.length ) {
                 callback()
             }
         };
@@ -163,6 +170,11 @@ AppArk.prototype.setup = function( config, callback ) {
     assert( config.length > 0, "you need at least one plugin to start your app" );
 
     var config_copy = config.slice();
+
+    // when does not have any dependency go out
+    if ( ! config_copy.length ) {
+        return callback();
+    }
 
     var check_finish_load_plugins = ( loaded_plugin_path ) => {
         // remove each loaded plugin from config copy and when all them were loadeds call the callback
