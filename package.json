@@ -1,6 +1,6 @@
 {
   "name": "node-app-ark",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A Node application creator about plugin architecture approach.",
   "main": "appark.js",
   "scripts": {
