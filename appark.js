@@ -112,7 +112,7 @@ AppArk.prototype.loadPlugin = function( path_name, callback ) {
          /*
              require index.js file from plugin directory
           */
-         var plugin_setup_fn = require( path_name );
+         var plugin_setup_fn = require( package_path );
 
          plugin_setup_fn.call( app, imports, () => {
             //  console.log("done() was called");
@@ -130,7 +130,7 @@ AppArk.prototype.loadPlugin = function( path_name, callback ) {
 /**
  * Resolve all dependencies from current plugin
  * @param  {object}   metadata From package.json file
- * @param  {Function} callback 
+ * @param  {Function} callback
  */
 AppArk.prototype.resolvePackageDependencies = function( metadata, callback ) {
     if ( metadata.hasOwnProperty("plugin") && metadata.plugin.hasOwnProperty("requires") ) {
