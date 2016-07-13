@@ -1,5 +1,4 @@
 "use strict";
-
 var events = require('events');
 var assert = require('assert');
 var path = require('path'),
@@ -10,7 +9,7 @@ var existsSync = require('fs').existsSync || require('path').existsSync;
 var EventEmitter = events.EventEmitter;
 
 exports.create = create;
-exports.AppArk = AppArk;
+exports.Ark = Ark;
 
 
 /*
@@ -39,10 +38,10 @@ function isDirectory( dir ) {
  * Create an app
  * @param  {Array}   config   initial plugins
  * @param  {Function} callback
- * @return {AppArk}
+ * @return {Ark}
  */
 function create( config, callback ) {
-    var app = new AppArk( config );
+    var app = new Ark( config );
     app.setup( config , callback );
     return app;
 }
@@ -50,7 +49,6 @@ function create( config, callback ) {
 /*
     SHARED VARS
  */
-var base_path;
 var imports = {};
 var cache = {};
 
@@ -61,29 +59,45 @@ var cache = {};
  */
 
 /**
- * AppArk Class
+ * Ark Class
  * Handle plugins, install it, resolve plugins dependencies...
+ *
+ * Config:
+ * 	{
+ * 		basePath: root directory to your application
+ * 	}
+ *
+ * @param {Object} config
  */
-function AppArk( config ) {
-    base_path = process.env.ARK_BASE_PATH;
-
+function Ark( config ) {
+    config = config || {};
+    this.basePath = config.basePath || process.env.BASE_PATH || process.cwd();
 }
-AppArk.prototype = Object.create( EventEmitter.prototype, {constructor: {value:AppArk} } );
+Ark.prototype = Object.create( EventEmitter.prototype, {constructor: {value:Ark} } );
 
 /**
  * Load plugins from path
  * @param  {string}   path_name Relative path to plugin directory
  * @param  {Function} callback  When done will be called
  */
-AppArk.prototype.loadPlugin = function( path_name, callback ) {
+Ark.prototype.loadPlugin = function( path_name, callback ) {
     var app = this;
     var metadata = {};
-    var package_path = resolve( base_path, path_name );
+
+    var package_path = resolve( this.basePath, path_name );
 
     assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
-    assert( isDirectory( package_path ), "The path not exists or not accessible: " + package_path );
+    // assert( isDirectory( package_path ), "The path not exists or not accessible: " + package_path );
 
-
+    try {
+        if ( ! isDirectory( package_path ) ) {
+            var package_file = require.resolve( path_name );
+            package_path = path.dirname( package_file );
+        }
+    } catch(e) {
+        console.error(path_name, "is not found");
+        process.exit(e.code);
+    }
 
     /*
         Check if plugin is already loaded
@@ -134,7 +148,7 @@ AppArk.prototype.loadPlugin = function( path_name, callback ) {
  * @param  {object}   metadata From package.json file
  * @param  {Function} callback
  */
-AppArk.prototype.resolvePackageDependencies = function( metadata, callback ) {
+Ark.prototype.resolvePackageDependencies = function( metadata, callback ) {
     if ( metadata.hasOwnProperty("plugin") && metadata.plugin.hasOwnProperty("requires") ) {
         assert( Array.isArray( metadata.plugin.requires ), "{plugin: {requires: []}} must to be an Array" );
 
@@ -164,7 +178,7 @@ AppArk.prototype.resolvePackageDependencies = function( metadata, callback ) {
 };
 
 
-AppArk.prototype.setup = function( config, callback ) {
+Ark.prototype.setup = function( config, callback ) {
     assert.notStrictEqual( config, undefined, "config is undefined its required" );
     assert( Array.isArray( config ), "config is not an Array" );
     assert( config.length > 0, "you need at least one plugin to start your app" );
@@ -173,7 +187,7 @@ AppArk.prototype.setup = function( config, callback ) {
 
     // when does not have any dependency go out
     if ( ! config_copy.length ) {
-        return callback();
+        return callback(imports);
     }
 
     var check_finish_load_plugins = ( loaded_plugin_path ) => {
@@ -181,7 +195,7 @@ AppArk.prototype.setup = function( config, callback ) {
         config_copy.splice( config.indexOf( loaded_plugin_path ), 1 );
 
         if ( config_copy.length == 0 ) {
-            callback && callback()
+            callback && callback(imports)
         }
     }
 
