@@ -42,7 +42,7 @@ function isDirectory( dir ) {
  */
 function create( config, callback, preSetup ) {
     var app = new Ark( config );
-    util.isFunction(preSetup) && preSetup(app);
+    util.isFunction(preSetup) && preSetup(app, imports);
     app.setup( config , callback );
     return app;
 }
