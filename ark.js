@@ -5,7 +5,7 @@ var path = require('path'),
     resolve = path.resolve;
 var fs = require('fs');
 var existsSync = require('fs').existsSync || require('path').existsSync;
-
+var util = require('util');
 var EventEmitter = events.EventEmitter;
 
 exports.create = create;
@@ -40,8 +40,9 @@ function isDirectory( dir ) {
  * @param  {Function} callback
  * @return {Ark}
  */
-function create( config, callback ) {
+function create( config, callback, preSetup ) {
     var app = new Ark( config );
+    util.isFunction(preSetup) && preSetup(app);
     app.setup( config , callback );
     return app;
 }
@@ -133,13 +134,10 @@ Ark.prototype.loadPlugin = function( path_name, callback ) {
          plugin_setup_fn.call( app, imports, () => {
             //  console.log("done() was called");
              cache[package_path] = true;
-             app.emit( "plugin:loaded", package_path );
+             app.emit( "plugin:loaded", path_name, package_path );
              callback( path_name );
          });
      });
-
-
-
 };
 
 
