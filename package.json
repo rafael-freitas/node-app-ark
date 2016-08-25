@@ -1,6 +1,6 @@
 {
   "name": "node-ark",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A Node application creator about plugin architecture approach.",
   "main": "ark.js",
   "scripts": {
