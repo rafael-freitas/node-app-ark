@@ -5,7 +5,7 @@ var path = require('path'),
     resolve = path.resolve;
 var fs = require('fs');
 var existsSync = require('fs').existsSync || require('path').existsSync;
-var util = require('util');
+
 var EventEmitter = events.EventEmitter;
 
 exports.create = create;
@@ -36,14 +36,20 @@ function isDirectory( dir ) {
 
 /**
  * Create an app
- * @param  {Array}   config   initial plugins
+ * @param  {Array|Object}   packlist   initial plugins or config
  * @param  {Function} callback
  * @return {Ark}
  */
-function create( config, callback, preSetup ) {
+function create( packlist, callback ) {
+    var config = {}
+    // if packlist is an object switch this for config var
+    if (!Array.isArray(packlist)) {
+        config = packlist
+        // load the packlist from config packages Array
+        packlist = config.packages
+    }
     var app = new Ark( config );
-    util.isFunction(preSetup) && preSetup(app, imports);
-    app.setup( config , callback );
+    app.setup( packlist , callback );
     return app;
 }
 
@@ -65,14 +71,16 @@ var cache = {};
  *
  * Config:
  * 	{
- * 		basePath: root directory to your application
+ * 		paths: paths that ark will search for packages
  * 	}
  *
  * @param {Object} config
  */
 function Ark( config ) {
-    config = config || {};
-    this.basePath = config.basePath || process.env.BASE_PATH || process.cwd();
+    config = config || {}
+    this.paths = config.paths || [];
+    // first search for plugins in BASE_PATH or running proccess directory
+    this.paths.unshift(process.env.BASE_PATH || process.cwd())
 }
 Ark.prototype = Object.create( EventEmitter.prototype, {constructor: {value:Ark} } );
 
@@ -84,14 +92,25 @@ Ark.prototype = Object.create( EventEmitter.prototype, {constructor: {value:Ark}
 Ark.prototype.loadPlugin = function( path_name, callback ) {
     var app = this;
     var metadata = {};
-
-    var package_path = resolve( this.basePath, path_name );
+    var package_path
 
     assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
     // assert( isDirectory( package_path ), "The path not exists or not accessible: " + package_path );
 
     try {
+        // for each base path search for a valid plugin
+        for (var i = 0; i < this.paths.length; i++) {
+          this.paths[i]
+          package_path = resolve( this.paths[i], path_name )
+
+          if ( isDirectory( package_path ) ) {
+              break
+          }
+        }
         if ( ! isDirectory( package_path ) ) {
+            // Check if the plugin is a node_modules package
+            // i.e.:  path_name => 'config'
+            //        node_modules/config
             var package_file = require.resolve( path_name );
             package_path = path.dirname( package_file );
         }
@@ -134,10 +153,13 @@ Ark.prototype.loadPlugin = function( path_name, callback ) {
          plugin_setup_fn.call( app, imports, () => {
             //  console.log("done() was called");
              cache[package_path] = true;
-             app.emit( "plugin:loaded", path_name, package_path );
+             app.emit( "plugin:loaded", package_path );
              callback( path_name );
          });
      });
+
+
+
 };
 
 
