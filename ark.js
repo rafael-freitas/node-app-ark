@@ -5,7 +5,7 @@ var path = require('path'),
     resolve = path.resolve;
 var fs = require('fs');
 var existsSync = require('fs').existsSync || require('path').existsSync;
-
+var util = require('util');
 var EventEmitter = events.EventEmitter;
 
 exports.create = create;
@@ -40,7 +40,7 @@ function isDirectory( dir ) {
  * @param  {Function} callback
  * @return {Ark}
  */
-function create( packlist, callback ) {
+function create( packlist, callback, preSetup ) {
     var config = {}
     // if packlist is an object switch this for config var
     if (!Array.isArray(packlist)) {
@@ -49,6 +49,7 @@ function create( packlist, callback ) {
         packlist = config.packages
     }
     var app = new Ark( config );
+    util.isFunction(preSetup) && preSetup(app, imports);
     app.setup( packlist , callback );
     return app;
 }
@@ -115,8 +116,7 @@ Ark.prototype.loadPlugin = function( path_name, callback ) {
             package_path = path.dirname( package_file );
         }
     } catch(e) {
-        console.error(path_name, "is not found");
-        process.exit(e.code);
+        throw new Error('Package `' + path_name + '` not found')
     }
 
     /*
@@ -153,13 +153,10 @@ Ark.prototype.loadPlugin = function( path_name, callback ) {
          plugin_setup_fn.call( app, imports, () => {
             //  console.log("done() was called");
              cache[package_path] = true;
-             app.emit( "plugin:loaded", package_path );
+             app.emit( "plugin:loaded", path_name, package_path );
              callback( path_name );
          });
      });
-
-
-
 };
 
 
@@ -189,7 +186,12 @@ Ark.prototype.resolvePackageDependencies = function( metadata, callback ) {
         };
 
         for (let key of metadata.plugin.requires) {
+          try {
             this.loadPlugin( key, check_finish_load_plugins );
+          } catch (e) {
+            console.error("[node-ark]", e.message);
+            process.exit(e.code);
+          }
         }
     }
     else {
@@ -220,7 +222,12 @@ Ark.prototype.setup = function( config, callback ) {
     }
 
     for (let key of config) {
+      try {
         this.loadPlugin( key , check_finish_load_plugins );
+      } catch (e) {
+        console.error("[node-ark]", e.message);
+        process.exit(e.code);
+      }
     }
 
 };
