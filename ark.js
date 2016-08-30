@@ -189,7 +189,7 @@ Ark.prototype.resolvePackageDependencies = function( metadata, callback ) {
           try {
             this.loadPlugin( key, check_finish_load_plugins );
           } catch (e) {
-            console.error("[node-ark]", e.message);
+            console.error("[node-ark]", key + ':', e.message);
             process.exit(e.code);
           }
         }
@@ -225,7 +225,7 @@ Ark.prototype.setup = function( config, callback ) {
       try {
         this.loadPlugin( key , check_finish_load_plugins );
       } catch (e) {
-        console.error("[node-ark]", e.message);
+        console.error("[node-ark]", key + ':', e.message);
         process.exit(e.code);
       }
     }
