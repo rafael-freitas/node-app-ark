@@ -11,7 +11,6 @@ var EventEmitter = events.EventEmitter;
 exports.create = create;
 exports.Ark = Ark;
 
-
 /*
   UTILS
   ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -158,6 +157,87 @@ Ark.prototype.loadPlugin = function( path_name, callback ) {
          });
      });
 };
+/**
+ * Load and run plugins from path
+ * @param  {string}   path_name Relative path to plugin directory
+ * @param  {Function} callback  When done will be called
+ * @param  {*} args  Arguments for the plugin
+ */
+Ark.prototype.runPlugin = function( path_name, callback, args ) {
+    var app = this;
+    var metadata = {};
+    var package_path
+    args = Array.prototype.slice.call(arguments).slice(2)
+
+    assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
+    // assert( isDirectory( package_path ), "The path not exists or not accessible: " + package_path );
+
+    try {
+        // for each base path search for a valid plugin
+        for (var i = 0; i < this.paths.length; i++) {
+          this.paths[i]
+          package_path = resolve( this.paths[i], path_name )
+
+          if ( isDirectory( package_path ) ) {
+              break
+          }
+        }
+        if ( ! isDirectory( package_path ) ) {
+            // Check if the plugin is a node_modules package
+            // i.e.:  path_name => 'config'
+            //        node_modules/config
+            var package_file = require.resolve( path_name );
+            package_path = path.dirname( package_file );
+        }
+    } catch(e) {
+        throw new Error('Package `' + path_name + '` not found')
+    }
+
+    /*
+        Check if plugin is already loaded
+     */
+    if ( !cache.hasOwnProperty( package_path ) ) {
+        // callback( path_name );
+        // return true;
+        /*
+            Read package.json
+         */
+        if ( existsSync( resolve( package_path, "./package.json") ) ) {
+            // cache[package_path] = false;
+            metadata = require( resolve( package_path, "./package.json") );
+        }
+        /*
+            Load plugin dependencies
+            {
+                plugin: {
+                    requires: ["plugin/requiredPackage"]
+                }
+            }
+         */
+         this.resolvePackageDependencies( metadata, () => {
+             /*
+                 require index.js file from plugin directory
+              */
+             var plugin_setup_fn = require( package_path );
+             cache[package_path] = plugin_setup_fn;
+
+             plugin_setup_fn.apply( app, [imports, () => {
+                 app.emit( "plugin:run", path_name, package_path, args );
+                 callback( path_name );
+             }].concat(args));
+         });
+    } else {
+      if (typeof cache[package_path] === 'function') {
+        cache[package_path].apply( app, [imports, () => {
+            app.emit( "plugin:run", path_name, package_path, args );
+            callback( path_name );
+        }].concat(args));
+      } else {
+        throw 'Cannot run loaded plugin because it is not a function'
+      }
+
+    }
+};
 
 
 /**
@@ -189,9 +269,9 @@ Ark.prototype.resolvePackageDependencies = function( metadata, callback ) {
           try {
             this.loadPlugin( key, check_finish_load_plugins );
           } catch (e) {
-            console.error("[node-ark]", '(' + metadata.name + ')', key + ':', e.message);
-            console.error(e.stack);
-            process.exit(0);
+            console.error("[node-ark]", key + ':', e.message);
+            throw e;
+            process.exit(e.code);
           }
         }
     }
@@ -226,9 +306,9 @@ Ark.prototype.setup = function( config, callback ) {
       try {
         this.loadPlugin( key , check_finish_load_plugins );
       } catch (e) {
-        console.error("[node-ark]", '(setup)', key + ':', e.message);
-        console.error(e.stack);
-        process.exit(0);
+        console.error("[node-ark]", key + ':', e.message);
+        throw e;
+        process.exit(e.code);
       }
     }
 
