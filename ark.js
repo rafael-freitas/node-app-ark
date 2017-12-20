@@ -85,6 +85,49 @@ function Ark( config ) {
 Ark.prototype = Object.create( EventEmitter.prototype, {constructor: {value:Ark} } );
 
 /**
+ * Reload and run plugins from path. This method will remove the plugin from
+ * node require cache and node-ark cache too
+ * @param  {string}   path_name Relative path to plugin directory
+ * @param  {Function} callback  When done will be called
+ * @param  {*} args  Arguments for the plugin
+ */
+Ark.prototype.reloadPlugin = function( path_name, callback, args ) {
+  var app = this;
+  var package_path
+
+  assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
+  // assert( isDirectory( package_path ), "The path not exists or not accessible: " + package_path );
+
+  try {
+      // for each base path search for a valid plugin
+      for (var i = 0; i < this.paths.length; i++) {
+        this.paths[i]
+        package_path = resolve( this.paths[i], path_name )
+
+        if ( isDirectory( package_path ) ) {
+            break
+        }
+      }
+      if ( ! isDirectory( package_path ) ) {
+          // Check if the plugin is a node_modules package
+          // i.e.:  path_name => 'config'
+          //        node_modules/config
+          var package_file = require.resolve( path_name );
+          package_path = path.dirname( package_file );
+      }
+  } catch(e) {
+      throw new Error('Package `' + path_name + '` not found')
+  }
+
+  if (typeof cache[package_path] === 'function') {
+    delete cache[package_path]
+  }
+
+  delete require.cache[require.resolve(package_path)]
+  this.runPlugin.apply(this, arguments)
+}
+
+/**
  * Load plugins from path
  * @param  {string}   path_name Relative path to plugin directory
  * @param  {Function} callback  When done will be called
