@@ -2,14 +2,51 @@
 var events = require('events');
 var assert = require('assert');
 var path = require('path'),
-    resolve = path.resolve;
+    resolvePath = path.resolve;
 var fs = require('fs');
 var existsSync = require('fs').existsSync || require('path').existsSync;
-var util = require('util');
 var EventEmitter = events.EventEmitter;
 
-exports.create = create;
-exports.Ark = Ark;
+module.exports = create;
+create.create = create;
+create.Ark = Ark;
+
+
+/*
+  Static Functions
+  ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ */
+
+/**
+ * Create an app
+ * @param  {Array|Object}   packlist   initial plugins or config
+ * @param  {Function} callback
+ * @return {Ark}
+ */
+function create( packlist, callback, preSetup ) {
+    let config = {}
+    // if packlist is an object switch this for config var
+    if (!Array.isArray(packlist)) {
+        config = packlist
+        // load the packlist from config packages Array
+        packlist = config.packages
+    }
+    let app = new Ark( config );
+    typeof preSetup === 'function' && preSetup(app, imports);
+    app.setup( packlist , callback );
+    return app;
+}
+
+/*
+    SHARED VARS
+ */
+const imports = {};
+const cache = {};
+const waiting = {};
+let _idleList = '';
+let _timer
+let _idleDelay = 2000
+const isDebug = typeof process.env.DEBUG === 'string' ? process.env.DEBUG.search('ark:*') !== -1 : false
 
 /*
   UTILS
@@ -27,37 +64,25 @@ function isDirectory( dir ) {
     }
 }
 
-
-/*
-  Static Functions
-  ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
- */
-
-/**
- * Create an app
- * @param  {Array|Object}   packlist   initial plugins or config
- * @param  {Function} callback
- * @return {Ark}
- */
-function create( packlist, callback, preSetup ) {
-    var config = {}
-    // if packlist is an object switch this for config var
-    if (!Array.isArray(packlist)) {
-        config = packlist
-        // load the packlist from config packages Array
-        packlist = config.packages
-    }
-    var app = new Ark( config );
-    util.isFunction(preSetup) && preSetup(app, imports);
-    app.setup( packlist , callback );
-    return app;
+function log () {
+  let args = Array.prototype.slice.call(arguments).slice()
+  let package_name = args.shift()
+  var d = new Date()
+  isDebug && console.log.apply(console, [d.toLocaleString(), '[node-ark] <', package_name, '> '].concat(args))
 }
 
-/*
-    SHARED VARS
- */
-var imports = {};
-var cache = {};
+function stillWaitingList () {
+  let idlePackages = Object.keys(waiting)
+  let serializeIdleList = idlePackages.join('')
+  if (_idleList !== serializeIdleList && idlePackages.length) {
+    _idleList = serializeIdleList
+    console.log('=====================================================')
+    idlePackages.length && log('CORE', 'idle packages: ', idlePackages)
+    console.log('=====================================================')
+  }
+}
+
+_timer = setInterval(stillWaitingList, _idleDelay)
 
 
 /*
@@ -84,275 +109,196 @@ function Ark( config ) {
 }
 Ark.prototype = Object.create( EventEmitter.prototype, {constructor: {value:Ark} } );
 
-/**
- * Reload and run plugins from path. This method will remove the plugin from
- * node require cache and node-ark cache too
- * @param  {string}   path_name Relative path to plugin directory
- * @param  {Function} callback  When done will be called
- * @param  {*} args  Arguments for the plugin
- */
-Ark.prototype.reloadPlugin = function( path_name, callback, args ) {
-  var app = this;
-  var package_path
 
-  assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
-  // assert( isDirectory( package_path ), "The path not exists or not accessible: " + package_path );
-
+Ark.prototype.resolvePluginPath = function( relative_path ) {
+  let package_path
   try {
-      // for each base path search for a valid plugin
-      for (var i = 0; i < this.paths.length; i++) {
-        this.paths[i]
-        package_path = resolve( this.paths[i], path_name )
-
-        if ( isDirectory( package_path ) ) {
-            break
-        }
-      }
+      package_path = resolvePath.apply(null, this.paths.concat(relative_path))
       if ( ! isDirectory( package_path ) ) {
           // Check if the plugin is a node_modules package
           // i.e.:  path_name => 'config'
           //        node_modules/config
-          var package_file = require.resolve( path_name );
-          package_path = path.dirname( package_file );
+          var package_file = require.resolve(relative_path)
+          package_path = path.dirname(package_file)
       }
   } catch(e) {
-      throw new Error('Package `' + path_name + '` not found')
+      throw new Error('Package `' + relative_path + '` not found', e)
   }
-
-  if (typeof cache[package_path] === 'function') {
-    delete cache[package_path]
-  }
-
-  delete require.cache[require.resolve(package_path)]
-  this.runPlugin.apply(this, arguments)
+  return package_path
 }
-
-/**
- * Load plugins from path
- * @param  {string}   path_name Relative path to plugin directory
- * @param  {Function} callback  When done will be called
- */
-Ark.prototype.loadPlugin = function( path_name, callback ) {
-    var app = this;
-    var metadata = {};
-    var package_path
-
-    assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
-    // assert( isDirectory( package_path ), "The path not exists or not accessible: " + package_path );
-
-    try {
-        // for each base path search for a valid plugin
-        for (var i = 0; i < this.paths.length; i++) {
-          this.paths[i]
-          package_path = resolve( this.paths[i], path_name )
-
-          if ( isDirectory( package_path ) ) {
-              break
-          }
-        }
-        if ( ! isDirectory( package_path ) ) {
-            // Check if the plugin is a node_modules package
-            // i.e.:  path_name => 'config'
-            //        node_modules/config
-            var package_file = require.resolve( path_name );
-            package_path = path.dirname( package_file );
-        }
-    } catch(e) {
-        throw new Error('Package `' + path_name + '` not found')
-    }
-
-    /*
-        Check if plugin is already loaded
-     */
-    if ( cache.hasOwnProperty( package_path ) ) {
-        callback( path_name );
-        return true;
-    }
-
-    /*
-        Read package.json
-     */
-     if ( existsSync( resolve( package_path, "./package.json") ) ) {
-         cache[package_path] = false;
-         metadata = require( resolve( package_path, "./package.json") );
-     }
-
-
-    /*
-        Load plugin dependencies
-        {
-            plugin: {
-                requires: ["plugin/requiredPackage"]
-            }
-        }
-     */
-     this.resolvePackageDependencies( metadata, () => {
-         /*
-             require index.js file from plugin directory
-          */
-         var plugin_setup_fn = require( package_path );
-
-         plugin_setup_fn.call( app, imports, () => {
-            //  console.log("done() was called");
-             cache[package_path] = true;
-             app.emit( "plugin:loaded", path_name, package_path );
-             callback( path_name );
-         });
-     });
-};
-/**
- * Load and run plugins from path
- * @param  {string}   path_name Relative path to plugin directory
- * @param  {Function} callback  When done will be called
- * @param  {*} args  Arguments for the plugin
- */
-Ark.prototype.runPlugin = function( path_name, callback, args ) {
-    var app = this;
-    var metadata = {};
-    var package_path
-    args = Array.prototype.slice.call(arguments).slice(2)
-
-    assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
-    // assert( isDirectory( package_path ), "The path not exists or not accessible: " + package_path );
-
-    try {
-        // for each base path search for a valid plugin
-        for (var i = 0; i < this.paths.length; i++) {
-          this.paths[i]
-          package_path = resolve( this.paths[i], path_name )
-
-          if ( isDirectory( package_path ) ) {
-              break
-          }
-        }
-        if ( ! isDirectory( package_path ) ) {
-            // Check if the plugin is a node_modules package
-            // i.e.:  path_name => 'config'
-            //        node_modules/config
-            var package_file = require.resolve( path_name );
-            package_path = path.dirname( package_file );
-        }
-    } catch(e) {
-        throw new Error('Package `' + path_name + '` not found')
-    }
-
-    /*
-        Check if plugin is already loaded
-     */
-    if ( !cache.hasOwnProperty( package_path ) ) {
-        // callback( path_name );
-        // return true;
-        /*
-            Read package.json
-         */
-        if ( existsSync( resolve( package_path, "./package.json") ) ) {
-            // cache[package_path] = false;
-            metadata = require( resolve( package_path, "./package.json") );
-        }
-        /*
-            Load plugin dependencies
-            {
-                plugin: {
-                    requires: ["plugin/requiredPackage"]
-                }
-            }
-         */
-         this.resolvePackageDependencies( metadata, () => {
-             /*
-                 require index.js file from plugin directory
-              */
-             var plugin_setup_fn = require( package_path );
-             cache[package_path] = plugin_setup_fn;
-
-             plugin_setup_fn.apply( app, [imports, () => {
-                 app.emit( "plugin:run", path_name, package_path, args );
-                 callback( path_name );
-             }].concat(args));
-         });
-    } else {
-      if (typeof cache[package_path] === 'function') {
-        cache[package_path].apply( app, [imports, () => {
-            app.emit( "plugin:run", path_name, package_path, args );
-            callback( path_name );
-        }].concat(args));
-      } else {
-        throw 'Cannot run loaded plugin because it is not a function'
-      }
-
-    }
-};
-
 
 /**
  * Resolve all dependencies from current plugin
  * @param  {object}   metadata From package.json file
  * @param  {Function} callback
  */
-Ark.prototype.resolvePackageDependencies = function( metadata, callback ) {
-    if ( metadata.hasOwnProperty("plugin") && metadata.plugin.hasOwnProperty("requires") ) {
-        assert( Array.isArray( metadata.plugin.requires ), "{plugin: {requires: []}} must to be an Array" );
+Ark.prototype.resolvePackageDependencies = async function ( metadata, path_name ) {
+  const app = this
+  if ( metadata.hasOwnProperty("plugin") && metadata.plugin.hasOwnProperty("requires") ) {
+      assert( Array.isArray( metadata.plugin.requires ), "{plugin: {requires: []}} must to be an Array" );
 
-        var requires_copy = metadata.plugin.requires.slice();
+      var dependenciesList = metadata.plugin.requires.slice();
 
-        // when does not have any dependency go out
-        if ( ! requires_copy.length ) {
-            return callback();
-        }
+      log(path_name, 'DEPS - metadata deps: ', dependenciesList.length)
 
-        var check_finish_load_plugins = ( loaded_plugin_path ) => {
-            // remove each loaded plugin from requires copy and when all them were loadeds call the callback
-            requires_copy.splice( requires_copy.indexOf( loaded_plugin_path ), 1 );
+      // when there is no any dependency, go ahead
+      if ( ! dependenciesList.length ) {
+          return true
+      }
 
-            if ( ! requires_copy.length ) {
-                callback()
-            }
-        };
+      for (let i=0; i < metadata.plugin.requires.length; i++) {
+        let dependencyPathName = metadata.plugin.requires[i]
+        log(path_name, 'loading DEP: ', dependencyPathName)
+        await app.loadPlugin( dependencyPathName )
+      }
+  }
+  return true
+};
 
-        for (let key of metadata.plugin.requires) {
-          try {
-            this.loadPlugin( key, check_finish_load_plugins );
-          } catch (e) {
-            console.error("[node-ark]", key + ':', e.message);
-            throw e;
-            process.exit(e.code);
-          }
-        }
+function execPlugin (app, path_name, package_path, args) {
+  return new Promise(resolve => {
+    /*
+        require index.js file from plugin directory
+     */
+    const plugin_setup_fn = require( package_path );
+
+    log(path_name, 'RUN SETUP plugin', ': ')
+    try {
+      plugin_setup_fn.apply( app, [imports, callback].concat(args || []))
+    } catch (e) {
+      callback()
+      log(path_name, 'ERROR')
+    } finally {
+
     }
-    else {
-        callback()
+
+    function callback() {
+      cache[package_path] = plugin_setup_fn;
+      delete waiting[package_path]
+      app.emit( "plugin:loaded", path_name, package_path );
+      log(path_name, 'OK LOADED')
+      resolve(path_name)
     }
+  })
+}
+
+/**
+ * Reload plugins from path
+ * @param  {string}   path_name Relative path to plugin directory
+ * @param  {Function} callback  When done will be called
+ */
+Ark.prototype.reloadPlugin = async function ( path_name, args ) {
+
+  log(path_name, 'Reload plugin')
+
+  let package_path = this.resolvePluginPath(path_name)
+
+   if (typeof cache[package_path] === 'function') {
+     delete cache[package_path]
+   }
+
+   delete require.cache[require.resolve(package_path)]
+   await this.loadPlugin(path_name, args)
+   return path_name
+};
+
+/**
+ * Load and run plugins from path
+ * @param  {string}   path_name Relative path to plugin directory
+ * @param  {Function} callback  When done will be called
+ * @param  {*} args  Arguments for the plugin
+ */
+Ark.prototype.runPlugin = async function ( path_name, args ) {
+
+  log(path_name, 'Run plugin')
+
+  args = Array.prototype.slice.call(arguments).slice(1)
+
+  let package_path = this.resolvePluginPath(path_name)
+
+  if (typeof cache[package_path] === 'function') {
+    cache[package_path].apply( app, [imports, () => {
+        app.emit( "plugin:run", path_name, package_path, args )
+    }].concat(args));
+  } else {
+    // throw 'Cannot run loaded plugin because it is not a function'
+    await this.loadPlugin(path_name, args)
+  }
+
+   return path_name
 };
 
 
+/**
+ * Load plugins from path
+ * @param  {string}   path_name Relative path to plugin directory
+ * @param  {Function} callback  When done will be called
+ */
+Ark.prototype.loadPlugin = async function ( path_name, args) {
+
+  log(path_name, 'Loading plugin')
+
+  const app = this;
+  let metadata = {};
+  let package_path
+
+  assert.equal( typeof( path_name ), "string", "path_name needs to be string" );
+
+  // args = Array.prototype.slice.call(arguments).slice(1)
+
+  package_path = this.resolvePluginPath(path_name)
+
+  /*
+      Check if plugin is already loaded
+   */
+  if ( cache.hasOwnProperty( package_path ) || waiting[package_path] ) {
+      // callback( path_name );
+      return path_name
+  }
+
+  /*
+      Read package.json
+   */
+   if ( existsSync( resolvePath( package_path, "./package.json") ) ) {
+       cache[package_path] = false;
+       waiting[package_path] = true;
+       metadata = require( resolvePath( package_path, "./package.json") );
+   }
+
+  /*
+      Load plugin dependencies
+      {
+          plugin: {
+              requires: ["plugin/requiredPackage"]
+          }
+      }
+   */
+   let depsOk = await this.resolvePackageDependencies( metadata, path_name )
+
+   log(path_name, '... WAITING ...')
+   await execPlugin(this, path_name, package_path, args)
+   return path_name
+};
+
 Ark.prototype.setup = function( config, callback ) {
+    const app = this
     assert.notStrictEqual( config, undefined, "config is undefined its required" );
     assert( Array.isArray( config ), "config is not an Array" );
     assert( config.length > 0, "you need at least one plugin to start your app" );
 
-    var config_copy = config.slice();
-
     // when does not have any dependency go out
-    if ( ! config_copy.length ) {
-        return callback(imports);
+    if ( ! config.length ) {
+        return callback(app, imports);
     }
 
-    var check_finish_load_plugins = ( loaded_plugin_path ) => {
-        // remove each loaded plugin from config copy and when all them were loadeds call the callback
-        config_copy.splice( config.indexOf( loaded_plugin_path ), 1 );
-
-        if ( config_copy.length == 0 ) {
-            callback && callback(imports)
-        }
-    }
-
-    for (let key of config) {
-      try {
-        this.loadPlugin( key , check_finish_load_plugins );
-      } catch (e) {
-        console.error("[node-ark]", key + ':', e.message);
-        throw e;
-        process.exit(e.code);
+    async function runInitialPluginList () {
+      for (let key of config) {
+        let plugin = await app.loadPlugin(key)
       }
+      return true
     }
-
+    runInitialPluginList().then((value) => {
+      clearInterval(_timer)
+      callback && callback(app, imports)
+    })
 };
