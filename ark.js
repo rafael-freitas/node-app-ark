@@ -209,7 +209,7 @@ Ark.prototype.reloadPlugin = async function ( path_name, args ) {
  * @param  {*} args  Arguments for the plugin
  */
 Ark.prototype.runPlugin = async function ( path_name, args ) {
-
+  const app = this
   log(path_name, 'Run plugin')
 
   args = Array.prototype.slice.call(arguments).slice(1)
